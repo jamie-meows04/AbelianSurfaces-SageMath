@@ -13,7 +13,7 @@ algorithm (TODO).
 This library is intended to be integrated with SageMath when it is more
 complete.
 
-Sources:
+SOURCES:
 - [Kunzweiler24] (https://ia.cr/2022/990) (Richelot isogenies)
 - [OudomphengPope22] (https://ia.cr/2022/1283) (gluing isogenies)
 - [CDKLPT25] (https://ia.cr/2025/372) (IKO Correspondence & KLPT²)
