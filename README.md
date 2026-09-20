@@ -3,7 +3,7 @@
 This library extends existing functionality for computing with
 - Jacobians of genus-2 hyperelliptic curves,
 - products of two elliptic curves, and
-- quaternion matrices under the Ibukiyama--Katsuri--Oort (IKO)
+- quaternion matrices under the Ibukiyama–Katsuri–Oort (IKO)
   correspondence.
 
 In addition, it includes formulae for polarised (2,2)-isogenies between
