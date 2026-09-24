@@ -11,10 +11,13 @@ In addition, we implement formulae for polarised `(2,2)`-isogenies between
 superspecial principally polarised abelian surfaces, as well as the KLPT`^2`
 algorithm (TODO).
 
-Sources:
+This library is intended to be integrated with SageMath when it is more
+complete.
+
+SOURCES:
 - [Kunzweiler24] (https://ia.cr/2022/990) (Richelot isogenies)
 - [OudomphengPope22] (https://ia.cr/2022/1283) (gluing isogenies)
-- [CDKLPT25] (https://ia.cr/2025/372) (IKO Correspondence)
+- [CDKLPT25] (https://ia.cr/2025/372) (IKO Correspondence & KLPT`^2`)
 
 AUTHORS:
 
@@ -155,6 +158,11 @@ class HyperellipticJacobian_g2_generic(HyperellipticJacobian_g2_generic):
                 " Polynomial_ZZ_pEX."
             )
 
+        # Fix an ordering of the points at infinity
+        self._curve._alphas = tuple(
+            sorted(self._curve.roots_at_infinity())
+        )
+        
         F = self._curve.base_ring()
         super().__init__(self._curve, category=Jacobians(F))
 
@@ -280,6 +288,9 @@ class HyperellipticJacobian_g2_generic(HyperellipticJacobian_g2_generic):
         if (not args or args[:2] == (1, 0)
                 or hasattr(args[0], "scheme")
                 or hasattr(args[0], "splitting_field")):
+
+            if not args:
+                return super().__call__()
 
             if not isinstance(args[0], ProjectivePoint):
                 # Mumford divisor
@@ -525,16 +536,16 @@ class HyperellipticJacobian_g2_generic(HyperellipticJacobian_g2_generic):
         cg = self.lc() * h2[2] * h3[2] * δ ** 4
 
         sqrtβ = None
-        if _4_torsion_point:  # Need to test
+        if _4_torsion_point:
             Tu, Tv = _4_torsion_point
-            u = pullback(m1, Tu, 2).monic()  # It is assumed that deg(u)=2
-            if u.degree() == 2:
-                v = (pullback(m1, Tv, 3) * δ ** 3) % u
-                a0, a1, b0, b1 = u[0], u[1], v[0], v[1]
-                num = ((a0 * b0 * b1 - a1 * b0 ** 2) * β
-                       + cg * a0 ** 2 * (a0 - β) ** 2)
-                den = b0 ** 2 * β + cg * a0 ** 2 * (a0 - β) * (-a1 - ββ)
-                sqrtβ = num / den
+            u = pullback(m1, Tu, 2).monic()
+            # Since u is 4-torsion and codomain is ramified, deg(u)=2
+            v = (pullback(m1, Tv, 3) * δ ** 3) % u
+            a0, a1, b0, b1 = u[0], u[1], v[0], v[1]
+            num = ((a0 * b1 - a1 * b0) * β * b0
+                    + cg * a0 ** 2 * (a0 - β) ** 2)
+            den = b0 ** 2 * β + cg * a0 ** 2 * (a0 - β) * (-a1 - ββ)
+            sqrtβ = num / den
         if not sqrtβ:
             sqrtβ = min(β.sqrt(all=True))
         σ = a = ~sqrtβ
@@ -553,28 +564,41 @@ class HyperellipticJacobian_g2_generic(HyperellipticJacobian_g2_generic):
         def φ(P: MumfordDivisorClassField):
             Pu, Pv = P.uv()
             w = P._n
+            d = Pu.degree()
+            # Split into 3 cases: supported on 0, 1, or 2 affine points
+            # Pullback is only needed when there are 2 affine points
 
-            if Pu.degree() == 0:
+            if d == 0:
+                # Either zero or supported at only points at infinity
                 if self._poly.degree() == 5 or w == 1:
+                    # P is zero
                     return codomain()
-                Q = codomain._curve(σ, self.sqrt_lc())
-                R = codomain._curve(σ, -self.sqrt_lc())
+                # ∞± = (1:±√E:0) ↦ (1:±√E:1) ↦ (σ:±√E:1) = O±
+                Q = codomain._curve(σ, self.sqrt_lc())  # O+
+                R = codomain._curve(σ, -self.sqrt_lc())  # O-
+                # w == 0: [∞- – ∞+] ↦ [O- – O+]
+                # w == 2: [∞+ – ∞-] ↦ [O+ – O-]
                 return codomain(Q, R) if w == 2 else codomain(R, Q)
 
-            if Pu.degree() == 1:
+            if d == 1:
                 a, b = -Pu[0], Pv[0]
-                χ = m[2] * a + m[3]  # denominator
-                if χ == 0:  # image at infinity
+                μ = m[2] * a + m[3]  # denominator
+                if μ == 0:  # image at infinity
                     Q = codomain._curve(1, 0, 0)
                 else:  # affine image
-                    δ = ~χ
+                    δ = ~μ
                     a_, b_ = (m[0] * a + m[1]) * δ, b * δ ** 3
                     Q = codomain._curve(a_, b_)
-                if self._poly.degree() == 5:
+
+                if self._poly.degree() == 5:  # Ramified model
                     return codomain(Q)
-                y = self.sqrt_lc() if w == 0 else -self.sqrt_lc()
-                R = codomain._curve(σ, y)
-                return codomain(Q, R)
+                else:  # Split model
+                    # Subtract the image of the correct point at infinity
+                    y = self.sqrt_lc() if w == 0 else -self.sqrt_lc()
+                    R = codomain._curve(σ, y)
+                    return codomain(Q, R)
+
+            # d == 2, i.e., support on 2 affine points
             u = pullback(m, Pu, 2).monic()
             v = (pullback(m, Pv, 3) * ε) % u
             # if u.degree() == 1:
@@ -697,7 +721,7 @@ class HyperellipticJacobian_g2_generic(HyperellipticJacobian_g2_generic):
         inv = self.type_1_inv
         if inv is None:
             γ = self.transform_to_type_1(kernel_gens, _4_torsion_point)
-            φ = γ.codomain.isogeny22()
+            φ = γ.codomain().isogeny22()
             return γ.post_compose(φ, kernel_gens)
         A, B, C, E = inv
         if C != 1:  # Richelot isogeny
@@ -929,44 +953,95 @@ class HyperellipticJacobian_g2_generic(HyperellipticJacobian_g2_generic):
             kernel_gens = (self(x, 0), self(x ** 2 - A * x + 1, 0))
             return PPAS_22Isogeny(self, codomain, kernel_gens, φ)
 
-        else:  # Split isogeny
-            ψ1 = EllipticCurve_from_cubic(
-                Y ** 2 * Z - E * (X + 2 * Z) * (X - A * Z) * (X - B * Z)
-            )
-            ψ2 = EllipticCurve_from_cubic(
-                Y ** 2 * Z - E * (X - 2 * Z) * (X - A * Z) * (X - B * Z)
-            )
-            E1, E2 = ψ1.domain(), ψ2.domain()
-            E1ʼ: EllipticCurve_finite_field = ψ1.codomain()
-            E2ʼ: EllipticCurve_finite_field = ψ2.codomain()
-            codomain = EllipticProduct(E1ʼ, E2ʼ)
+        else:  # Splitting isogeny
+            inv2 = ~F(2)
+            def θ(ε):
+                Eʼ = ε * E
+                α = (A - 2 * ε) * (B - 2 * ε)
+                c3 = Eʼ * α
+                inv_c3 = ~c3
+                c2 = -4 * Eʼ * (ε * (A + B) - 4)
+                c1 = 16 * Eʼ
+                ψ = EllipticCurve_from_cubic(
+                    Y ** 2 * Z - (
+                        c3 * X ** 3 +
+                        c2 * X ** 2 * Z +
+                        c1 * X * Z ** 2
+                    )
+                )
+                Ed, Ec = ψ.domain(), ψ.codomain()
 
-            def π1(P):
-                if P[0] != 0 and P[2] != 0:
-                    x = P[0] + 1 / P[0]
-                    y = P[1] * (P[0] + 1) / P[0] ** 2
-                    return E1(x, y, 1)
-                else:
-                    return E1(0)
+                def φ_(P):
+                    u, v = P
+                    u0, u1, u2 = u[0], u[1], u[2]
+                    v0, v1 = v[0], v[1]
 
-            def π2(P):
-                if P[0] != 0 and P[2] != 0:
-                    x = P[0] + 1 / P[0]
-                    y = P[1] * (P[0] - 1) / P[0] ** 2
-                    return E2(x, y, 1)
-                else:
-                    return E2(0)
+                    if u2 == 0:
+                        # deg u = 1
+                        if u1 == 0:
+                            # deg u = 0
+                            return Ec(0)
+                        κ = 16 / α
+                        x = -ε * κ * (u0 + ε) ** 2 / (4 * u0)
+                        y = κ * v0 * (u0 + ε) / (2 * u0 ** 2)
+                        return ψ(Ed((x, y, 1)))
 
-            def φ(P: MumfordDivisorClassField) -> MumfordDivisorClassField:
-                # TODO: Optimise
-                result = []
-                supp = self.positive_support(P)
-                if not supp:
-                    return codomain()
-                for Q, n in supp.items():
-                    for _ in range(n):
-                        result.append(codomain(ψ1(π1(Q)), ψ2(π2(Q))))
-                return sum(result)
+                    p = u(ε)
+                    if p == 0:
+                        # one support point ↦ O on E_ε
+                        x2 = -u1 - ε
+                        s = x2 - ε
+                        if s == 0:
+                            return Ec(0)
+                        s_inv = ~s
+                        s_inv2 = s_inv ** 2
+                        s_inv3 = s_inv * s_inv2
+                        y2 = v1 * x2 + v0
+                        x = 4 * ε * x2 * s_inv2
+                        y = 8 * y2 * s_inv3
+                        return ψ(Ed((x, y, 1)))
+
+                    r = 2 + ε * u1
+                    r2 = r * r
+                    w = v(ε)
+                    inv_p = ~p
+                    inv_p2 = inv_p ** 2
+                    inv_p3 = inv_p * inv_p2
+
+                    # sum of x coords
+                    Σ = -4 * (ε * u1 * (1 + u0) + 4 * u0) * inv_p2
+
+                    # sum of y coords
+                    H = 8 * (v1 * p * (r2 - 2 * p)
+                             - ε * r * w * (r2 - 3 * p)) * inv_p3
+
+                    if u0 == 1:
+                        # x coords are equal
+                        if H == 0:
+                            return Ec(0)
+                        z0, e0 = Σ * inv2, H * inv2
+                        m = (3 * c3 * z0 ** 2 + Σ * c2 + c1) / H
+                        x = (m * m - c2) * inv_c3 - Σ
+                        y = -(m * (x - z0) + e0)
+                        return ψ(Ed((x, y, 1)))
+
+                    # deg u = 2
+                    δ = 1 / (p * (u0 - 1))
+                    m = 2 * ε * (w * (r2 - p) - ε * r * p * v1) * δ
+                    k = (H - m * Σ) * inv2
+                    x = (m * m - c2) * inv_c3 - Σ
+                    y = -(m * x + k)
+                    return ψ(Ed((x, y, 1)))
+
+                return (φ_, ψ)
+
+            φ1, ψ1 = θ(1)
+            φ2, ψ2 = θ(-1)
+            codomain = EllipticProduct(ψ1.codomain(), ψ2.codomain())
+
+            def φ(P: MumfordDivisorClassField) \
+                        -> EllipticProduct.element_class:
+                return codomain(φ1(P), φ2(P))
 
             kernel_gens = (self(x, 0), self(x ** 2 - A * x + 1, 0))
             return PPAS_22Isogeny(self, codomain, kernel_gens, φ)
@@ -1135,7 +1210,7 @@ class EllipticProduct(CartesianProduct):
 
     base_extend = change_ring
 
-    def __call__(self, *args: tuple) -> tuple[CartesianProduct.element_class]:
+    def __call__(self, *args: tuple) -> tuple[EllipticProduct.element_class]:
         r"""
         Return a point of ``self``, specified by ``*args``.
 
@@ -1183,7 +1258,7 @@ class EllipticProduct(CartesianProduct):
 
     @cached_method
     def torsion_gens(self, n: Integer) -> (
-        tuple[CartesianProduct.element_class]
+        tuple[EllipticProduct.element_class]
     ):
         r"""
         Return the four generators of the `n`-torsion subgroup of ``self``.
@@ -1209,7 +1284,7 @@ class EllipticProduct(CartesianProduct):
         )
 
     @cached_method
-    def points_of_order_2(self) -> tuple[CartesianProduct.element_class]:
+    def points_of_order_2(self) -> tuple[EllipticProduct.element_class]:
         """
         Return the 15 points of order 2 of ``self``.
         """
@@ -1262,7 +1337,7 @@ class EllipticProduct(CartesianProduct):
 
     @cached_method
     def _22_subgroup_gens(self) -> tuple[
-        tuple[CartesianProduct.element_class]
+        tuple[EllipticProduct.element_class]
     ]:
         r"""
         Return a basis for each of the 35 2-torsion subgroups of ``self``
@@ -1278,7 +1353,7 @@ class EllipticProduct(CartesianProduct):
 
     @cached_method
     def max_iso_22_subgroup_gens(self) -> tuple[
-        tuple[CartesianProduct.element_class]
+        tuple[EllipticProduct.element_class]
     ]:
         r"""
         Return a basis for each of the 15 `(2,2)`-subgroups of ``self``.
@@ -1298,8 +1373,8 @@ class EllipticProduct(CartesianProduct):
     def isomorphism(
                 self,
                 codomain: EllipticProduct,
-                map: Callable[[CartesianProduct.element_class],
-                              CartesianProduct.element_class]
+                map: Callable[[EllipticProduct.element_class],
+                              EllipticProduct.element_class]
             ) -> PPAS_Isomorphism:
         """
         Create an isomorphism from `self` to `codomain`.
@@ -1316,7 +1391,7 @@ class EllipticProduct(CartesianProduct):
 
     def lift_xx(self,
                 x1: FiniteRingElement,
-                x2: FiniteRingElement) -> CartesianProduct.element_class:
+                x2: FiniteRingElement) -> EllipticProduct.element_class:
         r"""
         Lift `x_1,x_2\in\mathbb{F}_q` to a point `((x_1,y_1),(x_2,y_2))`.
         """
@@ -1324,7 +1399,7 @@ class EllipticProduct(CartesianProduct):
 
     def isogeny22(
         self,
-        kernel_gens: tuple[CartesianProduct.element_class]
+        kernel_gens: tuple[EllipticProduct.element_class]
     ) -> PPAS_Isogeny:
         r"""
         Return a `(2,2)`-isogeny from ``self`` with kernel generated by
@@ -1354,8 +1429,8 @@ class EllipticProduct(CartesianProduct):
             φ1 = self.E1.isogeny(P, E1, 2)
             φ2 = self.E2.isogeny(Q, E2, 2)
 
-            def φ(P: CartesianProduct.element_class) \
-                    -> CartesianProduct.element_class:
+            def φ(P: EllipticProduct.element_class) \
+                    -> EllipticProduct.element_class:
                 return codomain(φ1(P[0]), φ2(P[1]))
             return PPAS_22Isogeny(self, codomain, kernel_gens, φ)
 
@@ -1363,8 +1438,8 @@ class EllipticProduct(CartesianProduct):
         if len(self.invariants) == 1:
             for γ in self.E1.isomorphisms(self.E2):
                 if γ(P1) == Q1 and γ(P2) == Q2:
-                    def φ(P: CartesianProduct.element_class) \
-                            -> CartesianProduct.element_class:
+                    def φ(P: EllipticProduct.element_class) \
+                            -> EllipticProduct.element_class:
                         Q, R = P
                         return self(Q + γ.inverse_image(R), γ(Q) - R)
                     return PPAS_22Isogeny(self, self, kernel_gens, φ)
@@ -1388,7 +1463,7 @@ class EllipticProduct(CartesianProduct):
         f = s1 * (x ** 2 - α1ʼ) * (x ** 2 - α2ʼ) * (x ** 2 - α3ʼ)
         codomain = HyperellipticJacobian_g2_generic(f)
 
-        def φ(P: CartesianProduct.element_class) -> MumfordDivisorClassField:
+        def φ(P: EllipticProduct.element_class) -> MumfordDivisorClassField:
             Q, R = P
             if (Q, R) in [(O1, O2), (P1, Q1), (P2, Q2), (P3, Q3)]:
                 # kernel
@@ -1428,11 +1503,11 @@ class PPAS_Isogeny(SageObject):
         codomain: HyperellipticJacobian_g2_generic | EllipticProduct,
         degrd: Integer = 1,
         kernel_gens: tuple[MumfordDivisorClassField |
-                           CartesianProduct.element_class] = (),
+                           EllipticProduct.element_class] = (),
         chain: list[PPAS_Isogeny] = [],
         map: Callable[
-            [MumfordDivisorClassField | CartesianProduct.element_class],
-            MumfordDivisorClassField | CartesianProduct.element_class
+            [MumfordDivisorClassField | EllipticProduct.element_class],
+            MumfordDivisorClassField | EllipticProduct.element_class
         ] = None
     ):
         r"""
@@ -1462,32 +1537,72 @@ class PPAS_Isogeny(SageObject):
         - ``map`` -- (default: None) the explicit map on points of ``domain``.
         """
 
-        self.domain = domain
-        self.codomain = codomain
-        self.degrd = degrd
-        self.degree = degrd ** 2
-        self.kernel_gens = kernel_gens
-        self.chain = chain
-        self.map = map
+        self._domain = domain
+        self._codomain = codomain
+        self._degrd = degrd
+        self._degree = degrd ** 2
+        self._kernel_gens = kernel_gens
+        self._chain = chain
+        self._map = map
+
+    @cached_method
+    def domain(self):
+        """
+        Return the domain abelian surface of the isogeny.
+        """        
+        return self._domain
+
+    @cached_method
+    def codomain(self):
+        """
+        Return the codomain abelian surface of the isogeny.
+        """        
+        return self._codomain
+
+    @cached_method
+    def degree(self):
+        """
+        Return the degree of the isogeny.
+        """        
+        return self._degree
+
+    @cached_method
+    def degrd(self):
+        """
+        Return the reduced degree of the isogeny.
+        """        
+        return self._degrd
+
+    reduced_degree = degrd
+
+    @cached_method
+    def list(self):
+        """
+        Return a factorisation of the isogeny into a chain of smaller
+        isogenies.
+        """        
+        return self._chain
+
+    chain = list
 
     def __repr__(self):
-        if self.degrd == 1:
-            return (f"Polarised isomorphism from {self.domain} "
-                    f"to {self.codomain}")
-        elif self.degrd == 2:
-            return f"(2,2)-isogeny from {self.domain} to {self.codomain}"
+        if self._degrd == 1:
+            return (f"Polarised isomorphism from {self._domain} "
+                    f"to {self._codomain}")
+        elif self._degrd == 2:
+            return f"(2,2)-isogeny from {self._domain} to {self._codomain}"
         elif len(self.kernel_gens) == 2:
-            return (f"({self.degrd},{self.degrd})-isogeny from {self.domain} "
-                    f"to {self.codomain}")
+            return (f"({self._degrd},{self._degrd})-isogeny from {self._domain} "
+                    f"to {self._codomain}")
         else:
-            return (f"Isogeny of reduced degree {self.degrd} from "
-                    f"{self.domain} to {self.codomain}")
+            return (f"Isogeny of reduced degree {self._degrd} from "
+                    f"{self._domain} to {self._codomain}")
 
     def post_compose(
         self,
         other: PPAS_Isogeny,
         kernel_gens: tuple[MumfordDivisorClassField |
-                            CartesianProduct.element_class]
+                            EllipticProduct.element_class]
     ):
         """
         Post-compose the isogeny ``self`` with another isogeny ``other``.
@@ -1501,16 +1616,16 @@ class PPAS_Isogeny(SageObject):
         OUTPUT: the composite isogeny which maps a point through ``self``,
         followed by ``other``.
         """
-        assert self.codomain == other.domain
-        return PPAS_Isogeny(self.domain, other.codomain,
-                            self.degrd * other.degrd, kernel_gens,
-                            self.chain + other.chain)
+        assert self._codomain == other._domain
+        return PPAS_Isogeny(self._domain, other._codomain,
+                            self._degrd * other._degrd, kernel_gens,
+                            self._chain + other._chain)
 
     def pre_compose(
         self,
         other: PPAS_Isogeny,
         kernel_gens: tuple[MumfordDivisorClassField |
-                            CartesianProduct.element_class]
+                            EllipticProduct.element_class]
     ):
         """
         Pre-compose the isogeny ``self`` with another isogeny ``other``.
@@ -1524,25 +1639,29 @@ class PPAS_Isogeny(SageObject):
         OUTPUT: the composite isogeny which maps a point through ``other``,
         followed by ``self``.
         """
-        assert self.domain == other.codomain
-        return PPAS_Isogeny(other.domain, self.codomain,
-                            self.degrd * other.degrd, kernel_gens,
-                            other.chain + self.chain)
+        assert self._domain == other._codomain
+        return PPAS_Isogeny(other._domain, self._codomain,
+                            self._degrd * other._degrd, kernel_gens,
+                            other._chain + self._chain)
 
-    def __call__(self, P):
+    # @cached_method
+    def __call__(
+        self,
+        P : MumfordDivisorClassField | EllipticProduct.element_class
+    ):
         """
         Return the image of the point ``P`` under the isogeny.
         """        
-        for φ in self.chain:
-            if hasattr(φ, 'map'):
-                P = φ.map(P)
+        for φ in self._chain:
+            if hasattr(φ, '_map'):
+                P = φ._map(P)
         return P
 
-    def __getitem__(self, index):
+    def __getitem__(self, index : int | Integer):
         """
-        Return the isogeny in ``self.chain`` with the specified index.
+        Return the isogeny in ``self.chain()`` with the specified index.
         """        
-        return self.chain[index]
+        return self._chain[index]
 
 
 class PPAS_22Isogeny(PPAS_Isogeny):
@@ -1572,10 +1691,10 @@ class PPAS_22Isogeny(PPAS_Isogeny):
         domain: HyperellipticJacobian_g2_generic | EllipticProduct,
         codomain: HyperellipticJacobian_g2_generic | EllipticProduct,
         kernel_gens: tuple[MumfordDivisorClassField |
-                           CartesianProduct.element_class],
+                           EllipticProduct.element_class],
         map: Callable[
-            [MumfordDivisorClassField | CartesianProduct.element_class],
-            MumfordDivisorClassField | CartesianProduct.element_class
+            [MumfordDivisorClassField | EllipticProduct.element_class],
+            MumfordDivisorClassField | EllipticProduct.element_class
         ]
     ):
         r"""
@@ -1622,8 +1741,8 @@ class PPAS_Isomorphism(PPAS_Isogeny):
         domain: HyperellipticJacobian_g2_generic | EllipticProduct,
         codomain: HyperellipticJacobian_g2_generic | EllipticProduct,
         map: Callable[
-            [MumfordDivisorClassField | CartesianProduct.element_class],
-            MumfordDivisorClassField | CartesianProduct.element_class
+            [MumfordDivisorClassField | EllipticProduct.element_class],
+            MumfordDivisorClassField | EllipticProduct.element_class
         ]
     ):
         r"""
@@ -1705,6 +1824,7 @@ class IKO(SageObject):
         x = polygen(ZZ)
         self.p = p
         F = GF((p, 2), 'ω', x ** 2 + 1)
+        F.rename("𝔽")
         Fx = PolynomialRing(F, 'x')
         Hp = QuaternionAlgebra(p)
         ω, x, (i, j, k) = F.gen(), Fx.gen(), Hp.gens()
@@ -1970,8 +2090,8 @@ class IKO(SageObject):
     @staticmethod
     def map_point(
         α: QuaternionAlgebraElement_rational_field | Matrix_generic_dense,
-        P: EllipticCurvePoint_finite_field | CartesianProduct.element_class
-    ) -> EllipticCurvePoint_finite_field | CartesianProduct.element_class:
+        P: EllipticCurvePoint_finite_field | EllipticProduct.element_class
+    ) -> EllipticCurvePoint_finite_field | EllipticProduct.element_class:
         r"""
         Return the image of ``P`` under the endomorphism ``α``. Works for
         points on `\mathcal{E}_0` or `\mathcal{A}_0`.
