@@ -376,6 +376,8 @@ class HyperellipticJacobian_g2_generic(HyperellipticJacobian_g2_generic):
                 wQ = 1 if Q[1] < -Q[1] else 0
                 u, v = x - P[0], P[1]
                 return super().__call__(u, v, 1 - wQ)
+            elif P == Q:
+                return super().__call__()
             return super().__call__(*args)
 
         if not isinstance(args[0], list | tuple):
@@ -986,15 +988,17 @@ class HyperellipticJacobian_g2_generic(HyperellipticJacobian_g2_generic):
                     u0, u1, u2 = u[0], u[1], u[2]
                     v0, v1 = v[0], v[1]
 
+                    if u in [1, x, x ** 2 - A * x + 1, x ** 2 - B * x + C]:
+                        # in kernel
+                        return Ec(0)
+
                     if u2 == 0:
                         # deg u = 1
-                        if u1 == 0:
-                            # deg u = 0
-                            return Ec(0)
                         κ = 16 / α
-                        x = -ε * κ * (u0 + ε) ** 2 / (4 * u0)
-                        y = κ * v0 * (u0 + ε) / (2 * u0 ** 2)
-                        return ψ(Ed((x, y, 1)))
+                        inv_u0 = ~u0
+                        xʼ = -ε * κ * (u0 + ε) ** 2 * inv2 ** 2 * inv_u0
+                        yʼ = κ * v0 * (u0 + ε) * inv2 * inv_u0 ** 2
+                        return ψ(Ed((xʼ, yʼ, 1)))
 
                     p = u(ε)
                     if p == 0:
@@ -1007,9 +1011,9 @@ class HyperellipticJacobian_g2_generic(HyperellipticJacobian_g2_generic):
                         s_inv2 = s_inv ** 2
                         s_inv3 = s_inv * s_inv2
                         y2 = v1 * x2 + v0
-                        x = 4 * ε * x2 * s_inv2
-                        y = 8 * y2 * s_inv3
-                        return ψ(Ed((x, y, 1)))
+                        xʼ = 4 * ε * x2 * s_inv2
+                        yʼ = 8 * y2 * s_inv3
+                        return ψ(Ed((xʼ, yʼ, 1)))
 
                     r = 2 + ε * u1
                     r2 = r * r
@@ -1031,17 +1035,17 @@ class HyperellipticJacobian_g2_generic(HyperellipticJacobian_g2_generic):
                             return Ec(0)
                         z0, e0 = Σ * inv2, H * inv2
                         m = (3 * c3 * z0 ** 2 + Σ * c2 + c1) / H
-                        x = (m * m - c2) * inv_c3 - Σ
-                        y = -(m * (x - z0) + e0)
-                        return ψ(Ed((x, y, 1)))
+                        xʼ = (m * m - c2) * inv_c3 - Σ
+                        yʼ = -(m * (xʼ - z0) + e0)
+                        return ψ(Ed((xʼ, yʼ, 1)))
 
                     # deg u = 2
                     δ = 1 / (p * (u0 - 1))
                     m = 2 * ε * (w * (r2 - p) - ε * r * p * v1) * δ
                     k = (H - m * Σ) * inv2
-                    x = (m * m - c2) * inv_c3 - Σ
-                    y = -(m * x + k)
-                    return ψ(Ed((x, y, 1)))
+                    xʼ = (m * m - c2) * inv_c3 - Σ
+                    yʼ = -(m * xʼ + k)
+                    return ψ(Ed((xʼ, yʼ, 1)))
 
                 return (φ_, ψ)
 
@@ -1307,14 +1311,14 @@ class EllipticProduct(CartesianProduct):
         r"""
         Return the three of order 2 of `\mathcal{E}_1`.
         """
-        return tuple(self.E1(r, 0, 1) for r in self.roots[0])
+        return tuple(self.E1(r, 0, 1) for r in self.roots()[0])
 
     @cached_method
     def E2_points_of_order_2(self) -> tuple[EllipticCurvePoint_finite_field]:
         r"""
         Return the three points of order 2 of `\mathcal{E}_2`.
         """
-        return tuple(self.E2(r, 0, 1) for r in self.roots[1])
+        return tuple(self.E2(r, 0, 1) for r in self.roots()[1])
 
     @cached_method
     def roots(self) -> tuple[FiniteRingElement]:
